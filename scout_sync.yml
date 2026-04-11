@@ -1,0 +1,29 @@
+name: Basis-Sentinel 5-Min Scout
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'    # Internal backup (just in case)
+  workflow_dispatch:         # Manual button
+  repository_dispatch:       # 🏛️ THE EXTERNAL GATEWAY
+    types: [ping_basis]      # Cron-job.org will send this signal
+
+jobs:
+  scout:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Yield Scout
+        env:
+          GSHEETS_SECRET: ${{ secrets.GSHEETS_SECRET }}
+          GSHEET_ID: ${{ secrets.GSHEET_ID }}
+        run: python scout_yield.py
