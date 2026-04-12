@@ -10,7 +10,6 @@ from datetime import datetime
 # --- 🏛️ INSTITUTIONAL UI CONFIG ---
 st.set_page_config(page_title="Basis-Sentinel | Yield Desk", page_icon="⚖️", layout="wide")
 
-# Theme: Bloomberg Terminal Stealth
 st.markdown("""
     <style>
     .main { background-color: #0e1117; color: #ffffff; }
@@ -39,14 +38,22 @@ def load_data(ledger):
         t_df = pd.DataFrame(tape_sheet.get_all_records())
         p_df = pd.DataFrame(payout_sheet.get_all_records())
         
-        if not t_df.empty:
-            t_df['timestamp'] = pd.to_datetime(t_df['timestamp'])
+        # 🛠️ DATA HARDENING: Convert columns to numeric and drop non-numeric "junk" rows
         if not p_df.empty:
-            p_df['timestamp'] = pd.to_datetime(p_df['timestamp'])
+            # Ensure balance and slippage are strictly numbers
+            p_df['new_balance'] = pd.to_numeric(p_df['new_balance'], errors='coerce')
+            p_df['timestamp'] = pd.to_datetime(p_df['timestamp'], errors='coerce')
+            # Remove any rows that failed conversion (like stray headers)
+            p_df = p_df.dropna(subset=['new_balance', 'timestamp'])
+            
+        if not t_df.empty:
+            t_df['timestamp'] = pd.to_datetime(t_df['timestamp'], errors='coerce')
+            t_df['funding_rate'] = pd.to_numeric(t_df['funding_rate'], errors='coerce')
+            t_df = t_df.dropna(subset=['funding_rate'])
             
         return t_df, p_df
     except Exception as e:
-        st.warning(f"Waiting for sheets to populate: {e}")
+        st.warning(f"Re-synchronizing Ledger: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
 # --- 🚀 THE FRONT OFFICE ---
@@ -62,14 +69,17 @@ try:
         # --- 💎 THE 5-COLUMN METRIC ROW ---
         m1, m2, m3, m4, m5 = st.columns(5)
         
-        # Logic for Balance & Profit
-        current_balance = float(payout_df['new_balance'].iloc[-1]) if not payout_df.empty else 10000.00
+        # Logic for Balance & Profit (Safely handles the empty/first-row state)
+        if not payout_df.empty:
+            current_balance = float(payout_df['new_balance'].iloc[-1])
+            # Safely sum the slippage column (4th column)
+            total_overhead = float(payout_df.iloc[:, 3].sum())
+        else:
+            current_balance = 10000.00
+            total_overhead = 0.00
+
         net_profit = current_balance - 10000.00
         roi = (net_profit / 10000.00) * 100
-        
-        # Logic for Overhead Bin (Summing the 4th column from your new Auditor)
-        # We handle cases where the column might be named 'slippage' or index 3
-        total_overhead = float(payout_df.iloc[:, 3].sum()) if not payout_df.empty else 0.00
         
         m1.metric("Vault Balance", f"£{current_balance:,.2f}", f"£{net_profit:+.4f}")
         m2.metric("Geometric ROI", f"{roi:.4f}%", "Net-of-Friction")
@@ -85,12 +95,14 @@ try:
             st.subheader("🛰️ Live Yield Heatmap")
             if not tape_df.empty:
                 latest = tape_df.sort_values('timestamp').groupby('asset').last().reset_index()
-                latest['Projected_APY'] = latest['funding_rate'].astype(float) * 3 * 365 * 100
+                latest['Projected_APY'] = latest['funding_rate'] * 3 * 365 * 100
                 heatmap_df = latest[['asset', 'Projected_APY', 'funding_rate', 'mark_price']].sort_values('Projected_APY', ascending=False)
+                
+                # Updated for latest Streamlit 'width' standards
                 st.dataframe(
                     heatmap_df.style.background_gradient(cmap='RdYlGn', subset=['Projected_APY'])
                     .format({'Projected_APY': '{:.2f}%', 'funding_rate': '{:.6f}'}),
-                    use_container_width=True
+                    width=None, use_container_width=True
                 )
             else:
                 st.info("Awaiting Vance-B's first 3-minute heartbeat...")
@@ -114,7 +126,7 @@ try:
             fig.update_traces(line_color='#00ffcc', line_width=3)
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("The Growth Curve will populate at the next audit window.")
+            st.info("The Growth Curve will populate as audits are filed.")
 
         # --- 🧾 RAW LEDGER ---
         with st.expander("🧾 View Raw Audit Logs"):
