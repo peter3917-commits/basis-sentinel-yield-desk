@@ -11,47 +11,53 @@ def fetch_mexc_data():
     results = []
     print(f"--- 🛰️ SCOUT START: {datetime.utcnow()} ---")
     
-    for asset in assets:
-        symbol = f"{asset}_USDT"
-        # Using the v1 contract detail endpoint
-        url = f"https://contract.mexc.com/api/v1/contract/detail?symbol={symbol}"
-        try:
-            response = requests.get(url, timeout=10).json()
+    # 🏛️ NEW ENDPOINT: Ticker data carries the live prices and funding
+    url = "https://contract.mexc.com/api/v1/contract/ticker"
+    
+    try:
+        response = requests.get(url, timeout=15).json()
+        
+        if response.get('success') and 'data' in response:
+            all_tickers = response['data']
             
-            # Audit the structure
-            if response.get('success') and 'data' in response:
-                d = response['data']
-                
-                # Resilient key checking
-                price = d.get('lastPrice') or d.get('last_price') or d.get('indexPrice')
-                funding = d.get('fundingRate') or d.get('funding_rate', 0)
-                
-                if price is not None:
+            # Map the tickers to a dictionary for fast lookup
+            ticker_map = {t['symbol']: t for t in all_tickers}
+            
+            for asset in assets:
+                symbol = f"{asset}_USDT"
+                if symbol in ticker_map:
+                    d = ticker_map[symbol]
+                    
+                    # Surgical data extraction
+                    price = float(d.get('lastPrice', 0))
+                    index_price = float(d.get('indexPrice', price))
+                    funding = float(d.get('fundingRate', 0))
+                    
                     entry = {
                         'staff': 'Scout_Yield',
                         'timestamp': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
                         'asset': asset,
-                        'mark_price': float(price),
-                        'index_price': float(d.get('indexPrice', price)),
-                        'funding_rate': float(funding),
-                        'basis_gap': float(price) - float(d.get('indexPrice', price))
+                        'mark_price': price,
+                        'index_price': index_price,
+                        'funding_rate': funding,
+                        'basis_gap': price - index_price
                     }
                     results.append(entry)
-                    print(f"✅ Captured {asset}: Price {price} | Funding {funding}")
+                    print(f"✅ Captured {asset}: ${price:,.2f} | Funding: {funding:.6f}")
                 else:
-                    print(f"⚠️ Data missing for {asset}: {d}")
-            else:
-                print(f"❌ MEXC Error for {asset}: {response.get('message', 'Unknown Error')}")
-                
-        except Exception as e:
-            print(f"❌ Connection/Parsing Error for {asset}: {str(e)}")
+                    print(f"⚠️ Symbol {symbol} not found in ticker list.")
+        else:
+            print(f"❌ MEXC API Error: {response.get('message', 'No data in response')}")
+            
+    except Exception as e:
+        print(f"❌ Connection Error: {str(e)}")
             
     print(f"--- 🛰️ SCOUT FINISHED: {len(results)} assets captured ---")
     return results
 
 def update_ledger(data):
     if not data:
-        print("❌ No data captured. GSheets update skipped.")
+        print("❌ No data captured. Skipping Google Sheets update.")
         return
 
     try:
@@ -63,6 +69,7 @@ def update_ledger(data):
         ledger = client.open_by_key(os.getenv("GSHEET_ID"))
         worksheet = ledger.worksheet("LIVE_TAPE")
         
+        # Format for gspread
         rows = [[v for v in d.values()] for d in data]
         worksheet.append_rows(rows)
         print(f"✅ SUCCESSFULLY FILED {len(rows)} ROWS TO THE LEDGER.")
