@@ -17,7 +17,7 @@ st.markdown("""
     .stMetric { background-color: #161b22; border: 1px solid #30363d; padding: 15px; border-radius: 10px; }
     div[data-testid="stMetricValue"] { color: #00ffcc; }
     </style>
-    """, unsafe_all_with_labels=True)
+    """, unsafe_allow_html=True) # 🛠️ FIXED: Standardized parameter
 
 # --- 🔑 VAULT ACCESS ENGINE ---
 def get_ledger():
@@ -53,7 +53,7 @@ def load_data(ledger):
 st.title("⚖️ Basis-Sentinel: £10,000 Virtual Yield Desk")
 st.caption(f"Strategy: Market-Neutral Cash & Carry | Audit Window: 8-Hours | Sampling: 180s")
 
-# We wrap the main execution in a try/except to catch any runtime desk errors
+# 🛠️ FIXED: Added the 'try' block to match the 'except' at the bottom
 try:
     ledger = get_ledger()
 
