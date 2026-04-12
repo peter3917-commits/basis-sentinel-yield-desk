@@ -17,7 +17,7 @@ st.markdown("""
     .stMetric { background-color: #161b22; border: 1px solid #30363d; padding: 15px; border-radius: 10px; }
     div[data-testid="stMetricValue"] { color: #00ffcc; }
     </style>
-    """, unsafe_allow_html=True) # 🛠️ FIXED: Standardized parameter
+    """, unsafe_allow_html=True)
 
 # --- 🔑 VAULT ACCESS ENGINE ---
 def get_ledger():
@@ -51,27 +51,31 @@ def load_data(ledger):
 
 # --- 🚀 THE FRONT OFFICE ---
 st.title("⚖️ Basis-Sentinel: £10,000 Virtual Yield Desk")
-st.caption(f"Strategy: Market-Neutral Cash & Carry | Audit Window: 8-Hours | Sampling: 180s")
+st.caption(f"Strategy: Market-Neutral Cash & Carry | Friction Factor: 10% | Sampling: 180s")
 
-# 🛠️ FIXED: Added the 'try' block to match the 'except' at the bottom
 try:
     ledger = get_ledger()
 
     if ledger:
         tape_df, payout_df = load_data(ledger)
 
-        # --- 💎 TOP LEVEL METRICS (The Vault Status) ---
-        m1, m2, m3, m4 = st.columns(4)
+        # --- 💎 THE 5-COLUMN METRIC ROW ---
+        m1, m2, m3, m4, m5 = st.columns(5)
         
-        # Logic for £10k Start
+        # Logic for Balance & Profit
         current_balance = float(payout_df['new_balance'].iloc[-1]) if not payout_df.empty else 10000.00
-        profit = current_balance - 10000.00
-        roi = (profit / 10000.00) * 100
+        net_profit = current_balance - 10000.00
+        roi = (net_profit / 10000.00) * 100
         
-        m1.metric("Vault Balance", f"£{current_balance:,.2f}", f"£{profit:+.4f}")
-        m2.metric("Geometric ROI", f"{roi:.4f}%", "Compounding 8h")
-        m3.metric("The Shield (Margin)", "£3,000.00", "30% Reserve")
+        # Logic for Overhead Bin (Summing the 4th column from your new Auditor)
+        # We handle cases where the column might be named 'slippage' or index 3
+        total_overhead = float(payout_df.iloc[:, 3].sum()) if not payout_df.empty else 0.00
+        
+        m1.metric("Vault Balance", f"£{current_balance:,.2f}", f"£{net_profit:+.4f}")
+        m2.metric("Geometric ROI", f"{roi:.4f}%", "Net-of-Friction")
+        m3.metric("The Shield", "£3,000.00", "30% Reserve")
         m4.metric("Active Capital", f"£{(current_balance * 0.7):,.2f}", "70% Deploy")
+        m5.metric("Overhead Bin", f"£{total_overhead:,.4f}", "Fees & Slippage", delta_color="inverse")
 
         # --- 🛰️ YIELD HEATMAP (The Analyst View) ---
         st.divider()
@@ -80,13 +84,9 @@ try:
         with c1:
             st.subheader("🛰️ Live Yield Heatmap")
             if not tape_df.empty:
-                # Asset logic: Majors + Alts
                 latest = tape_df.sort_values('timestamp').groupby('asset').last().reset_index()
-                # Projected APY: Rate * 3 (8h windows) * 365 (days)
                 latest['Projected_APY'] = latest['funding_rate'].astype(float) * 3 * 365 * 100
-                
                 heatmap_df = latest[['asset', 'Projected_APY', 'funding_rate', 'mark_price']].sort_values('Projected_APY', ascending=False)
-                
                 st.dataframe(
                     heatmap_df.style.background_gradient(cmap='RdYlGn', subset=['Projected_APY'])
                     .format({'Projected_APY': '{:.2f}%', 'funding_rate': '{:.6f}'}),
@@ -100,28 +100,28 @@ try:
             if not tape_df.empty:
                 last_ping = tape_df['timestamp'].max()
                 st.success(f"Scout Online: {last_ping.strftime('%H:%M:%S')}")
-                st.write(f"Protocol: High-Res Basis Sampling")
+                st.write(f"Protocol: Net Reinvestment Engine")
             else:
                 st.error("Scout Signal Lost")
 
         # --- 📈 THE COMPOUNDING CURVE ---
         st.divider()
-        st.subheader("📈 Auditor: Compounding Growth Curve")
+        st.subheader("📈 Auditor: Compounding Growth Curve (Net)")
         if not payout_df.empty:
             fig = px.line(payout_df, x='timestamp', y='new_balance', 
                           template="plotly_dark", markers=True,
-                          labels={"new_balance": "Total Equity (£)", "timestamp": "Payday UTC"})
+                          labels={"new_balance": "Total Equity (£)", "timestamp": "Audit UTC"})
             fig.update_traces(line_color='#00ffcc', line_width=3)
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("The Growth Curve will populate at the first 8-hour audit (00:05, 08:05, or 16:05 UTC).")
+            st.info("The Growth Curve will populate at the next audit window.")
 
         # --- 🧾 RAW LEDGER ---
         with st.expander("🧾 View Raw Audit Logs"):
             st.dataframe(payout_df.tail(20), use_container_width=True)
 
     else:
-        st.error("Firm Locked: Missing GSHEETS_SECRET or GSHEET_ID in Streamlit Cloud Secrets.")
+        st.error("Firm Locked: Missing GSHEETS_SECRET or GSHEET_ID.")
 
 except Exception as e:
-    st.error(f"⚠️ Dashboard Connection Error: {e}")
+    st.error(f"⚠️ Dashboard Error: {e}")
