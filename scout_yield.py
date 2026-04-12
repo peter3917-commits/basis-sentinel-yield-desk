@@ -13,33 +13,45 @@ def fetch_mexc_data():
     
     for asset in assets:
         symbol = f"{asset}_USDT"
+        # Using the v1 contract detail endpoint
         url = f"https://contract.mexc.com/api/v1/contract/detail?symbol={symbol}"
         try:
             response = requests.get(url, timeout=10).json()
-            if response.get('success'):
-                data = response['data']
-                entry = {
-                    'staff': 'Scout_Yield',
-                    'timestamp': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
-                    'asset': asset,
-                    'mark_price': str(data['lastPrice']),
-                    'index_price': str(data['indexPrice']),
-                    'funding_rate': float(data['fundingRate']),
-                    'basis_gap': float(data['lastPrice']) - float(data['indexPrice'])
-                }
-                results.append(entry)
-                print(f"✅ Fetched {asset}: {data['lastPrice']}")
+            
+            # Audit the structure
+            if response.get('success') and 'data' in response:
+                d = response['data']
+                
+                # Resilient key checking
+                price = d.get('lastPrice') or d.get('last_price') or d.get('indexPrice')
+                funding = d.get('fundingRate') or d.get('funding_rate', 0)
+                
+                if price is not None:
+                    entry = {
+                        'staff': 'Scout_Yield',
+                        'timestamp': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
+                        'asset': asset,
+                        'mark_price': float(price),
+                        'index_price': float(d.get('indexPrice', price)),
+                        'funding_rate': float(funding),
+                        'basis_gap': float(price) - float(d.get('indexPrice', price))
+                    }
+                    results.append(entry)
+                    print(f"✅ Captured {asset}: Price {price} | Funding {funding}")
+                else:
+                    print(f"⚠️ Data missing for {asset}: {d}")
             else:
-                print(f"⚠️ MEXC rejected {asset}: {response.get('message')}")
+                print(f"❌ MEXC Error for {asset}: {response.get('message', 'Unknown Error')}")
+                
         except Exception as e:
-            print(f"❌ Connection Error for {asset}: {e}")
+            print(f"❌ Connection/Parsing Error for {asset}: {str(e)}")
             
     print(f"--- 🛰️ SCOUT FINISHED: {len(results)} assets captured ---")
     return results
 
 def update_ledger(data):
     if not data:
-        print("❌ No data to write. Aborting GSheets update.")
+        print("❌ No data captured. GSheets update skipped.")
         return
 
     try:
@@ -48,19 +60,12 @@ def update_ledger(data):
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(creds)
         
-        # Open by ID
-        sheet_id = os.getenv("GSHEET_ID")
-        ledger = client.open_by_key(sheet_id)
+        ledger = client.open_by_key(os.getenv("GSHEET_ID"))
         worksheet = ledger.worksheet("LIVE_TAPE")
         
-        print(f"🚀 Connected to Ledger: {ledger.title}")
-        
-        # Convert to List of Lists
-        rows_to_append = [[val for val in entry.values()] for entry in data]
-        
-        # APPEND
-        worksheet.append_rows(rows_to_append)
-        print(f"✅ SUCCESSFULLY APPENDED {len(rows_to_append)} ROWS TO GOOGLE SHEETS.")
+        rows = [[v for v in d.values()] for d in data]
+        worksheet.append_rows(rows)
+        print(f"✅ SUCCESSFULLY FILED {len(rows)} ROWS TO THE LEDGER.")
         
     except Exception as e:
         print(f"❌ GOOGLE SHEETS ERROR: {e}")
