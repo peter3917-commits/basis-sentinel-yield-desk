@@ -35,25 +35,29 @@ def load_data(ledger):
         tape_sheet = ledger.worksheet("LIVE_TAPE")
         payout_sheet = ledger.worksheet("BASIS_PAYOUT_LOG")
         
+        # Pull raw values to avoid header name friction
         t_df = pd.DataFrame(tape_sheet.get_all_records())
         p_df = pd.DataFrame(payout_sheet.get_all_records())
         
-        # 🛠️ DATA HARDENING: Convert columns to numeric and drop non-numeric "junk" rows
+        # 🛠️ DATA HARDENING: Force numeric status on the Log
         if not p_df.empty:
-            # Ensure balance and slippage are strictly numbers
+            # We enforce names based on the 5-column standard we established
+            p_df.columns = ['timestamp', 'avg_funding_rate', 'gross_payout', 'slippage', 'new_balance']
+            
             p_df['new_balance'] = pd.to_numeric(p_df['new_balance'], errors='coerce')
+            p_df['slippage'] = pd.to_numeric(p_df['slippage'], errors='coerce')
             p_df['timestamp'] = pd.to_datetime(p_df['timestamp'], errors='coerce')
-            # Remove any rows that failed conversion (like stray headers)
+            
+            # Drop any row that isn't valid financial data
             p_df = p_df.dropna(subset=['new_balance', 'timestamp'])
             
         if not t_df.empty:
             t_df['timestamp'] = pd.to_datetime(t_df['timestamp'], errors='coerce')
             t_df['funding_rate'] = pd.to_numeric(t_df['funding_rate'], errors='coerce')
-            t_df = t_df.dropna(subset=['funding_rate'])
             
         return t_df, p_df
     except Exception as e:
-        st.warning(f"Re-synchronizing Ledger: {e}")
+        st.warning(f"Resynchronizing Ledger... ({e})")
         return pd.DataFrame(), pd.DataFrame()
 
 # --- 🚀 THE FRONT OFFICE ---
@@ -69,11 +73,9 @@ try:
         # --- 💎 THE 5-COLUMN METRIC ROW ---
         m1, m2, m3, m4, m5 = st.columns(5)
         
-        # Logic for Balance & Profit (Safely handles the empty/first-row state)
         if not payout_df.empty:
             current_balance = float(payout_df['new_balance'].iloc[-1])
-            # Safely sum the slippage column (4th column)
-            total_overhead = float(payout_df.iloc[:, 3].sum())
+            total_overhead = float(payout_df['slippage'].sum())
         else:
             current_balance = 10000.00
             total_overhead = 0.00
@@ -87,7 +89,7 @@ try:
         m4.metric("Active Capital", f"£{(current_balance * 0.7):,.2f}", "70% Deploy")
         m5.metric("Overhead Bin", f"£{total_overhead:,.4f}", "Fees & Slippage", delta_color="inverse")
 
-        # --- 🛰️ YIELD HEATMAP (The Analyst View) ---
+        # --- 🛰️ YIELD HEATMAP ---
         st.divider()
         c1, c2 = st.columns([2, 1])
 
@@ -98,14 +100,13 @@ try:
                 latest['Projected_APY'] = latest['funding_rate'] * 3 * 365 * 100
                 heatmap_df = latest[['asset', 'Projected_APY', 'funding_rate', 'mark_price']].sort_values('Projected_APY', ascending=False)
                 
-                # Updated for latest Streamlit 'width' standards
                 st.dataframe(
                     heatmap_df.style.background_gradient(cmap='RdYlGn', subset=['Projected_APY'])
                     .format({'Projected_APY': '{:.2f}%', 'funding_rate': '{:.6f}'}),
-                    width=None, use_container_width=True
+                    use_container_width=True
                 )
             else:
-                st.info("Awaiting Vance-B's first 3-minute heartbeat...")
+                st.info("Awaiting Scout heartbeat...")
 
         with c2:
             st.subheader("📡 Desk Status")
@@ -133,7 +134,7 @@ try:
             st.dataframe(payout_df.tail(20), use_container_width=True)
 
     else:
-        st.error("Firm Locked: Missing GSHEETS_SECRET or GSHEET_ID.")
+        st.error("Firm Locked: Check Secrets.")
 
 except Exception as e:
     st.error(f"⚠️ Dashboard Error: {e}")
