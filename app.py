@@ -35,25 +35,20 @@ def load_data(ledger):
         tape_sheet = ledger.worksheet("LIVE_TAPE")
         payout_sheet = ledger.worksheet("BASIS_PAYOUT_LOG")
         
-        # Pull raw values to avoid header name friction
         t_df = pd.DataFrame(tape_sheet.get_all_records())
         p_df = pd.DataFrame(payout_sheet.get_all_records())
         
-        # 🛠️ DATA HARDENING: Force numeric status on the Log
         if not p_df.empty:
-            # We enforce names based on the 5-column standard we established
             p_df.columns = ['timestamp', 'avg_funding_rate', 'gross_payout', 'slippage', 'new_balance']
-            
             p_df['new_balance'] = pd.to_numeric(p_df['new_balance'], errors='coerce')
             p_df['slippage'] = pd.to_numeric(p_df['slippage'], errors='coerce')
             p_df['timestamp'] = pd.to_datetime(p_df['timestamp'], errors='coerce')
-            
-            # Drop any row that isn't valid financial data
             p_df = p_df.dropna(subset=['new_balance', 'timestamp'])
             
         if not t_df.empty:
             t_df['timestamp'] = pd.to_datetime(t_df['timestamp'], errors='coerce')
             t_df['funding_rate'] = pd.to_numeric(t_df['funding_rate'], errors='coerce')
+            t_df['basis_gap'] = pd.to_numeric(t_df['basis_gap'], errors='coerce')
             
         return t_df, p_df
     except Exception as e:
@@ -62,7 +57,7 @@ def load_data(ledger):
 
 # --- 🚀 THE FRONT OFFICE ---
 st.title("⚖️ Basis-Sentinel: £10,000 Virtual Yield Desk")
-st.caption(f"Strategy: Market-Neutral Cash & Carry | Friction Factor: 10% | Sampling: 180s")
+st.caption(f"Strategy: Market-Neutral Cash & Carry | Portfolio: High-Velocity Basket | Sampling: 180s")
 
 try:
     ledger = get_ledger()
@@ -96,24 +91,28 @@ try:
         with c1:
             st.subheader("🛰️ Live Yield Heatmap")
             if not tape_df.empty:
-                latest = tape_df.sort_values('timestamp').groupby('asset').last().reset_index()
+                # 🏛️ Filter for the NEW High-Velocity Basket
+                current_basket = ['BTC', 'ETH', 'SOL', 'BNB', 'SUI', 'APT']
+                latest = tape_df[tape_df['asset'].isin(current_basket)]
+                latest = latest.sort_values('timestamp').groupby('asset').last().reset_index()
+                
                 latest['Projected_APY'] = latest['funding_rate'] * 3 * 365 * 100
-                heatmap_df = latest[['asset', 'Projected_APY', 'funding_rate', 'mark_price']].sort_values('Projected_APY', ascending=False)
+                heatmap_df = latest[['asset', 'Projected_APY', 'basis_gap', 'funding_rate', 'mark_price']].sort_values('Projected_APY', ascending=False)
                 
                 st.dataframe(
                     heatmap_df.style.background_gradient(cmap='RdYlGn', subset=['Projected_APY'])
-                    .format({'Projected_APY': '{:.2f}%', 'funding_rate': '{:.6f}'}),
+                    .format({'Projected_APY': '{:.2f}%', 'funding_rate': '{:.6f}', 'basis_gap': '{:.4f}'}),
                     use_container_width=True
                 )
             else:
-                st.info("Awaiting Scout heartbeat...")
+                st.info("Awaiting Scout heartbeat for new basket...")
 
         with c2:
             st.subheader("📡 Desk Status")
             if not tape_df.empty:
                 last_ping = tape_df['timestamp'].max()
                 st.success(f"Scout Online: {last_ping.strftime('%H:%M:%S')}")
-                st.write(f"Protocol: Net Reinvestment Engine")
+                st.write(f"Basket: BTC, ETH, SOL, BNB, SUI, APT")
             else:
                 st.error("Scout Signal Lost")
 
@@ -129,7 +128,6 @@ try:
         else:
             st.info("The Growth Curve will populate as audits are filed.")
 
-        # --- 🧾 RAW LEDGER ---
         with st.expander("🧾 View Raw Audit Logs"):
             st.dataframe(payout_df.tail(20), use_container_width=True)
 
