@@ -7,11 +7,13 @@ import json
 from datetime import datetime
 
 def fetch_mexc_data():
-    assets = ['BTC', 'ETH', 'SOL', 'XRP', 'XLM', 'HBAR']
+    # 🏛️ UPDATED ASSET BASKET: High-Liquidity Sandbox Selection
+    # Target Assets: BTC, ETH, SOL, BNB, SUI, APT
+    assets = ['BTC', 'ETH', 'SOL', 'BNB', 'SUI', 'APT']
     results = []
     print(f"--- 🛰️ SCOUT START: {datetime.utcnow()} ---")
     
-    # 🏛️ NEW ENDPOINT: Ticker data carries the live prices and funding
+    # MEXC Public Ticker Endpoint
     url = "https://contract.mexc.com/api/v1/contract/ticker"
     
     try:
@@ -20,7 +22,7 @@ def fetch_mexc_data():
         if response.get('success') and 'data' in response:
             all_tickers = response['data']
             
-            # Map the tickers to a dictionary for fast lookup
+            # Map tickers for fast selection
             ticker_map = {t['symbol']: t for t in all_tickers}
             
             for asset in assets:
@@ -28,7 +30,6 @@ def fetch_mexc_data():
                 if symbol in ticker_map:
                     d = ticker_map[symbol]
                     
-                    # Surgical data extraction
                     price = float(d.get('lastPrice', 0))
                     index_price = float(d.get('indexPrice', price))
                     funding = float(d.get('fundingRate', 0))
@@ -57,7 +58,7 @@ def fetch_mexc_data():
 
 def update_ledger(data):
     if not data:
-        print("❌ No data captured. Skipping Google Sheets update.")
+        print("❌ No data captured. Skipping update.")
         return
 
     try:
@@ -69,10 +70,10 @@ def update_ledger(data):
         ledger = client.open_by_key(os.getenv("GSHEET_ID"))
         worksheet = ledger.worksheet("LIVE_TAPE")
         
-        # Format for gspread
+        # Prepare rows for Google Sheets
         rows = [[v for v in d.values()] for d in data]
         worksheet.append_rows(rows)
-        print(f"✅ SUCCESSFULLY FILED {len(rows)} ROWS TO THE LEDGER.")
+        print(f"✅ LEDGER UPDATED: {len(rows)} rows added to LIVE_TAPE.")
         
     except Exception as e:
         print(f"❌ GOOGLE SHEETS ERROR: {e}")
