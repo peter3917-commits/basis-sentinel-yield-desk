@@ -6,7 +6,6 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 
 # 🏛️ INSTITUTIONAL FRICTION SETTINGS
-# We assume 10% of gross funding is lost to exchange fees and bid/ask slippage
 FRICTION_FACTOR = 0.10 
 
 def run_audit():
@@ -24,7 +23,7 @@ def run_audit():
         
         # Starting Capital Logic (£10,000 baseline)
         current_balance = float(payout_data[-1]['new_balance']) if payout_data else 10000.00
-        active_capital = current_balance * 0.70  # Only 70% is "at risk" earning yield
+        active_capital = current_balance * 0.70  
         
         tape_sheet = ledger.worksheet("LIVE_TAPE")
         tape_df = pd.DataFrame(tape_sheet.get_all_records())
@@ -33,36 +32,44 @@ def run_audit():
             print("❌ Auditor: No tape data found. Aborting.")
             return
 
-        # Get average funding from the 6-coin basket
-        latest_rates = tape_df.sort_values('timestamp').groupby('asset').last()
+        # 🏛️ UPDATED ASSET BASKET: Re-aligning with the High-Velocity Scout
+        target_assets = ['BTC', 'ETH', 'SOL', 'BNB', 'SUI', 'APT']
+        
+        # Filter tape for ONLY our current basket and get latest rates
+        filtered_tape = tape_df[tape_df['asset'].isin(target_assets)]
+        
+        if filtered_tape.empty:
+            print("❌ Auditor: No valid asset data found for current basket. Check Scout.")
+            return
+
+        latest_rates = filtered_tape.sort_values('timestamp').groupby('asset').last()
         avg_funding = latest_rates['funding_rate'].astype(float).mean()
         
         # --- 📈 THE NET COMPOUNDING MATH ---
-        # 1. Calculate Gross Gain (What the market owes us)
+        # 1. Calculate Gross Gain
         gross_payout = active_capital * avg_funding
         
-        # 2. Calculate Slippage/Fees (The overhead cost)
+        # 2. Calculate Slippage/Fees
         slippage_cost = gross_payout * FRICTION_FACTOR
         
-        # 3. Final Net Profit (What actually gets reinvested)
+        # 3. Final Net Profit
         net_payout = gross_payout - slippage_cost
         
-        # 4. New Vault Total (True Working Capital)
+        # 4. New Vault Total
         new_balance = current_balance + net_payout
         
         # --- 🧾 FILING THE LEDGER ---
-        # We store slippage separately so the Dashboard can show the 'Overhead Bin'
-        # Entry columns: Time, Avg Rate, Gross Profit, Slippage, New Balance
         audit_entry = [
             datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
             round(avg_funding, 8),
             round(gross_payout, 4),
-            round(slippage_cost, 4), # 🏛️ THIS IS YOUR NEW OVERHEAD BIN DATA
-            round(new_balance, 4)   # 🏛️ THIS IS YOUR CLEAN CAPITAL
+            round(slippage_cost, 4), 
+            round(new_balance, 4)   
         ]
         
         payout_sheet.append_row(audit_entry)
-        print(f"✅ Audit Successful. Net: £{net_payout:.4f} | Slippage: £{slippage_cost:.4f}")
+        print(f"✅ Audit Successful for {target_assets}")
+        print(f"✅ Net: £{net_payout:.4f} | Avg Funding: {avg_funding:.6f}")
 
     except Exception as e:
         print(f"❌ Audit Critical Error: {e}")
