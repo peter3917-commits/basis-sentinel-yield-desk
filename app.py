@@ -14,11 +14,35 @@ st.set_page_config(page_title="Sentinel V3 | Command", page_icon="🛡️", layo
 CGT_ALLOWANCE = 3000.00
 CGT_RATE = 0.18 
 
+# 🎨 IMPROVED READABILITY CSS
 st.markdown("""
     <style>
     .main { background-color: #0e1117; color: #ffffff; }
-    .stMetric { background-color: #161b22; border: 1px solid #30363d; padding: 15px; border-radius: 10px; }
-    div[data-testid="stMetricValue"] { color: #00ffcc; }
+    
+    /* Box Styling */
+    .stMetric { 
+        background-color: #161b22; 
+        border: 1px solid #30363d; 
+        padding: 15px; 
+        border-radius: 10px; 
+    }
+    
+    /* 🟢 TITLE COLOUR FIX: Making 'Vault Balance' etc readable */
+    [data-testid="stMetricLabel"] {
+        color: #e6edf3 !important; /* Soft Silver/White */
+        font-size: 1.1rem !important;
+        font-weight: 600 !important;
+    }
+    
+    /* 🟢 VALUE COLOUR: Neon Green */
+    [data-testid="stMetricValue"] { 
+        color: #00ffcc !important; 
+    }
+    
+    /* 🟢 DELTA COLOUR: Sub-text */
+    [data-testid="stMetricDelta"] {
+        color: #8b949e !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
