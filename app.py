@@ -18,31 +18,10 @@ CGT_RATE = 0.18
 st.markdown("""
     <style>
     .main { background-color: #0e1117; color: #ffffff; }
-    
-    /* Box Styling */
-    .stMetric { 
-        background-color: #161b22; 
-        border: 1px solid #30363d; 
-        padding: 15px; 
-        border-radius: 10px; 
-    }
-    
-    /* 🟢 TITLE COLOUR FIX: Making 'Vault Balance' etc readable */
-    [data-testid="stMetricLabel"] {
-        color: #e6edf3 !important; /* Soft Silver/White */
-        font-size: 1.1rem !important;
-        font-weight: 600 !important;
-    }
-    
-    /* 🟢 VALUE COLOUR: Neon Green */
-    [data-testid="stMetricValue"] { 
-        color: #00ffcc !important; 
-    }
-    
-    /* 🟢 DELTA COLOUR: Sub-text */
-    [data-testid="stMetricDelta"] {
-        color: #8b949e !important;
-    }
+    .stMetric { background-color: #161b22; border: 1px solid #30363d; padding: 15px; border-radius: 10px; }
+    [data-testid="stMetricLabel"] { color: #e6edf3 !important; font-size: 1.1rem !important; font-weight: 600 !important; }
+    [data-testid="stMetricValue"] { color: #00ffcc !important; }
+    [data-testid="stMetricDelta"] { color: #8b949e !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -62,13 +41,13 @@ def load_v3_data():
         except:
             tx_df = pd.DataFrame(columns=['timestamp', 'asset', 'action', 'toll_paid', 'reason'])
         
-        # 🛡️ Safety: Fix missing columns
+        # 🛡️ Resiliency Check: Fix columns in memory
         if not tape_df.empty and 'is_active' not in tape_df.columns:
             tape_df['is_active'] = 1
 
         for df in [tape_df, payout_df, tx_df]:
             if not df.empty and 'timestamp' in df.columns:
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
         
         return tape_df, payout_df, tx_df
     except Exception as e:
@@ -110,21 +89,22 @@ if not payout_df.empty:
         if not tape_df.empty:
             current_basket = ['BTC', 'ETH', 'SOL', 'BNB', 'SUI', 'APT']
             latest = tape_df[tape_df['asset'].isin(current_basket)]
-            latest = latest.sort_values('timestamp').groupby('asset').last().reset_index()
             
-            # 🛡️ DECISION DISPLAY
-            latest['Status'] = latest['is_active'].apply(lambda x: "🟢 ACTIVE" if x == 1 else "🛡️ SHIELDED")
-            latest['Projected_APY'] = latest.apply(
-                lambda x: (x['funding_rate'] * 3 * 365 * 100) if x['is_active'] == 1 else 0.0, axis=1
-            )
-            
-            heatmap_df = latest[['asset', 'Status', 'Projected_APY', 'funding_rate', 'basis_gap']].sort_values('Projected_APY', ascending=False)
-            
-            st.dataframe(
-                heatmap_df.style.background_gradient(cmap='RdYlGn', subset=['Projected_APY'])
-                .format({'Projected_APY': '{:.2f}%', 'funding_rate': '{:.6f}', 'basis_gap': '{:.4f}'}),
-                width='stretch'
-            )
+            # Sort only if data exists to prevent crash
+            if not latest.empty:
+                latest = latest.sort_values('timestamp').groupby('asset').last().reset_index()
+                latest['Status'] = latest['is_active'].apply(lambda x: "🟢 ACTIVE" if x == 1 else "🛡️ SHIELDED")
+                latest['Projected_APY'] = latest.apply(
+                    lambda x: (x['funding_rate'] * 3 * 365 * 100) if x['is_active'] == 1 else 0.0, axis=1
+                )
+                
+                heatmap_df = latest[['asset', 'Status', 'Projected_APY', 'funding_rate', 'basis_gap']].sort_values('Projected_APY', ascending=False)
+                
+                st.dataframe(
+                    heatmap_df.style.background_gradient(cmap='RdYlGn', subset=['Projected_APY'])
+                    .format({'Projected_APY': '{:.2f}%', 'funding_rate': '{:.6f}', 'basis_gap': '{:.4f}'}),
+                    width='stretch'
+                )
 
     with c2:
         st.subheader("📡 Desk Status")
@@ -132,10 +112,13 @@ if not payout_df.empty:
             last_ping = tape_df['timestamp'].max()
             st.success(f"Scout Protocol: ONLINE")
             st.info(f"Last Heartbeat: {last_ping.strftime('%H:%M:%S')} UTC")
-            active_count = latest['is_active'].sum()
-            st.write(f"Deployment: {active_count} / 6 Assets")
-            if active_count < 6:
-                st.warning(f"Note: {6-active_count} Assets Ejected for Protection")
+            try:
+                active_count = latest['is_active'].sum()
+                st.write(f"Deployment: {active_count} / 6 Assets")
+                if active_count < 6:
+                    st.warning(f"Note: {6-active_count} Assets Ejected for Protection")
+            except:
+                st.write("Awaiting deployment signals...")
 
     # --- 📈 THE COMPOUNDING CURVE ---
     st.divider()
@@ -145,8 +128,12 @@ if not payout_df.empty:
     fig.update_traces(line_color='#00ffcc', line_width=3)
     st.plotly_chart(fig, width='stretch')
 
+    # --- 🧾 TX LOG (RESILLIENT SORTING) ---
     with st.expander("🧾 View Black-Box Transaction Log (Tolls Paid)"):
-        st.dataframe(tx_df.sort_values('timestamp', ascending=False).head(20), width='stretch')
+        if not tx_df.empty and 'timestamp' in tx_df.columns:
+            st.dataframe(tx_df.sort_values('timestamp', ascending=False).head(20), width='stretch')
+        else:
+            st.info("No transaction tolls recorded in this session.")
 
 else:
-    st.error("Firm Locked: Ensure BASIS_PAYOUT_LOG has data.")
+    st.error("Firm Locked: Ensure BASIS_PAYOUT_LOG has data and correct headers.")
