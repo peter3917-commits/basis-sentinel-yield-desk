@@ -41,7 +41,7 @@ def load_v3_data():
         except:
             tx_df = pd.DataFrame(columns=['timestamp', 'asset', 'action', 'toll_paid', 'reason'])
         
-        # 🛡️ Resiliency Check: Fix columns in memory
+        # 🛡️ Resiliency Check
         if not tape_df.empty and 'is_active' not in tape_df.columns:
             tape_df['is_active'] = 1
 
@@ -62,17 +62,17 @@ tape_df, payout_df, tx_df = load_v3_data()
 
 if not payout_df.empty:
     # 💎 CALCULATION ENGINE
+    payout_df['new_balance'] = pd.to_numeric(payout_df['new_balance'], errors='coerce')
     current_balance = float(payout_df['new_balance'].iloc[-1])
     net_profit = current_balance - 10000.00
     roi = (net_profit / 10000.00) * 100
     
     total_fees = pd.to_numeric(tx_df['toll_paid'], errors='coerce').sum() if not tx_df.empty else 0.00
-    
     taxable_amount = max(0, net_profit - CGT_ALLOWANCE)
     tax_reserve = taxable_amount * CGT_RATE
     true_net = current_balance - tax_reserve
 
-    # --- 💎 THE 5-COLUMN METRIC ROW ---
+    # --- 💎 METRICS ---
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("Vault Balance", f"£{current_balance:,.2f}", f"£{net_profit:+.2f}")
     m2.metric("Geometric ROI", f"{roi:.4f}%", "Net-of-Friction")
@@ -90,7 +90,6 @@ if not payout_df.empty:
             current_basket = ['BTC', 'ETH', 'SOL', 'BNB', 'SUI', 'APT']
             latest = tape_df[tape_df['asset'].isin(current_basket)]
             
-            # Sort only if data exists to prevent crash
             if not latest.empty:
                 latest = latest.sort_values('timestamp').groupby('asset').last().reset_index()
                 latest['Status'] = latest['is_active'].apply(lambda x: "🟢 ACTIVE" if x == 1 else "🛡️ SHIELDED")
@@ -99,7 +98,6 @@ if not payout_df.empty:
                 )
                 
                 heatmap_df = latest[['asset', 'Status', 'Projected_APY', 'funding_rate', 'basis_gap']].sort_values('Projected_APY', ascending=False)
-                
                 st.dataframe(
                     heatmap_df.style.background_gradient(cmap='RdYlGn', subset=['Projected_APY'])
                     .format({'Projected_APY': '{:.2f}%', 'funding_rate': '{:.6f}', 'basis_gap': '{:.4f}'}),
@@ -112,15 +110,12 @@ if not payout_df.empty:
             last_ping = tape_df['timestamp'].max()
             st.success(f"Scout Protocol: ONLINE")
             st.info(f"Last Heartbeat: {last_ping.strftime('%H:%M:%S')} UTC")
-            try:
-                active_count = latest['is_active'].sum()
-                st.write(f"Deployment: {active_count} / 6 Assets")
-                if active_count < 6:
-                    st.warning(f"Note: {6-active_count} Assets Ejected for Protection")
-            except:
-                st.write("Awaiting deployment signals...")
+            active_count = latest['is_active'].sum()
+            st.write(f"Deployment: {active_count} / 6 Assets")
+            if active_count < 6:
+                st.warning(f"Note: {6-active_count} Assets Ejected")
 
-    # --- 📈 THE COMPOUNDING CURVE ---
+    # --- 📈 GROWTH ---
     st.divider()
     st.subheader("📈 Auditor: Net Liquidation Curve")
     fig = px.line(payout_df, x='timestamp', y='new_balance', 
@@ -128,12 +123,20 @@ if not payout_df.empty:
     fig.update_traces(line_color='#00ffcc', line_width=3)
     st.plotly_chart(fig, width='stretch')
 
-    # --- 🧾 TX LOG (RESILLIENT SORTING) ---
-    with st.expander("🧾 View Black-Box Transaction Log (Tolls Paid)"):
-        if not tx_df.empty and 'timestamp' in tx_df.columns:
-            st.dataframe(tx_df.sort_values('timestamp', ascending=False).head(20), width='stretch')
-        else:
-            st.info("No transaction tolls recorded in this session.")
+    # --- 🧾 THE DUAL LEDGERS ---
+    st.divider()
+    col_l, col_r = st.columns(2)
+    
+    with col_l:
+        with st.expander("📊 View Audit History (BASIS_PAYOUT_LOG)"):
+            st.dataframe(payout_df.sort_values('timestamp', ascending=False), width='stretch')
+            
+    with col_r:
+        with st.expander("🧾 View Transaction Log (Tolls Paid)"):
+            if not tx_df.empty:
+                st.dataframe(tx_df.sort_values('timestamp', ascending=False), width='stretch')
+            else:
+                st.info("No transaction tolls recorded yet.")
 
 else:
-    st.error("Firm Locked: Ensure BASIS_PAYOUT_LOG has data and correct headers.")
+    st.error("Firm Locked: Check BASIS_PAYOUT_LOG.")
