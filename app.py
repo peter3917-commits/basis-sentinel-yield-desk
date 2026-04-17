@@ -25,6 +25,10 @@ def load_v3_data():
         tape_df = pd.DataFrame(ledger.worksheet("LIVE_TAPE").get_all_records())
         payout_df = pd.DataFrame(ledger.worksheet("BASIS_PAYOUT_LOG").get_all_records())
         
+        # 🛡️ Safety: If is_active is missing from Sheet, create it to prevent crash
+        if not tape_df.empty and 'is_active' not in tape_df.columns:
+            tape_df['is_active'] = 1
+        
         # 🛡️ Soft check for Transaction Log
         try:
             tx_df = pd.DataFrame(ledger.worksheet("TRANSACTION_LOG").get_all_records())
@@ -49,7 +53,6 @@ if not payout_df.empty:
     current_balance = float(payout_df['new_balance'].iloc[-1])
     total_net_profit = current_balance - 10000.00
     
-    # Toll Calculation
     total_fees = 0.00
     if not tx_df.empty:
         tx_df['toll_paid'] = pd.to_numeric(tx_df['toll_paid'], errors='coerce').fillna(0)
@@ -73,14 +76,16 @@ if not payout_df.empty:
         latest = tape_df[tape_df['asset'].isin(current_basket)]
         latest = latest.sort_values('timestamp').groupby('asset').last().reset_index()
         
-        latest['Status'] = latest['is_active'].apply(lambda x: "🟢 ACTIVE" if x == 1 else "🛡️ SHIELDED")
-        latest['Projected_APY'] = latest.apply(
-            lambda x: (x['funding_rate'] * 3 * 365 * 100) if x['is_active'] == 1 else 0.0, axis=1
-        )
+        # Double-check column exists before applying lambda
+        if 'is_active' in latest.columns:
+            latest['Status'] = latest['is_active'].apply(lambda x: "🟢 ACTIVE" if x == 1 else "🛡️ SHIELDED")
+            latest['Projected_APY'] = latest.apply(
+                lambda x: (x['funding_rate'] * 3 * 365 * 100) if x['is_active'] == 1 else 0.0, axis=1
+            )
         
         st.dataframe(
             latest[['asset', 'Status', 'Projected_APY', 'funding_rate', 'basis_gap']].style.background_gradient(cmap='RdYlGn', subset=['Projected_APY']),
-            width='stretch' # 🏛️ Streamlit 2026 Compliant
+            width='stretch'
         )
 
     # --- 📈 CURVE ---
@@ -90,4 +95,4 @@ if not payout_df.empty:
     st.plotly_chart(fig, width='stretch')
 
 else:
-    st.info("Awaiting first V3 Audit. Ensure TRANSACTION_LOG sheet exists in Google Sheets.")
+    st.info("Awaiting first V3 Audit. Ensure TRANSACTION_LOG sheet exists and is shared.")
