@@ -1,21 +1,29 @@
-name: Basis-Sentinel 5-Min Scout
+name: Basis-Sentinel Operations
 
 on:
   schedule:
-    - cron: '*/5 * * * *'    # Internal backup (just in case)
-  workflow_dispatch:         # Manual button
-  repository_dispatch:       # 🏛️ THE EXTERNAL GATEWAY
-    types: [ping_basis]      # Cron-job.org will send this signal
+    - cron: '*/5 * * * *'     # Internal 5-min backup
+  workflow_dispatch:          # Manual button
+  repository_dispatch:        # External gateways
+    types: [ping_basis, ping_scout, ping_audit]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
-  scout:
+  run_desk:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v5.3.0
         with:
           python-version: '3.10'
 
@@ -27,3 +35,22 @@ jobs:
           GSHEETS_SECRET: ${{ secrets.GSHEETS_SECRET }}
           GSHEET_ID: ${{ secrets.GSHEET_ID }}
         run: python scout_yield.py
+
+      - name: Run Payout Auditor
+        # 🛡️ RESTORATION LOGIC: 
+        # Run Auditor if it's a manual click, a scheduled run, or an audit ping.
+        if: |
+          github.event_name == 'workflow_dispatch' || 
+          github.event_name == 'schedule' ||
+          github.event.action == 'ping_audit'
+        env:
+          GSHEETS_SECRET: ${{ secrets.GSHEETS_SECRET }}
+          GSHEET_ID: ${{ secrets.GSHEET_ID }}
+        run: python auditor_payout.py
+
+      - name: Commit and Push Vault State
+        run: |
+          git config --global user.name "Sentinel-Bot"
+          git config --global user.email "actions@github.com"
+          git add vault_states.json
+          git diff --quiet && git diff --staged --quiet || (git commit -m "🤖 V3: Update Vault States" && git push)
