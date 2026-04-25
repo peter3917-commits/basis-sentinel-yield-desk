@@ -41,7 +41,6 @@ def load_v3_data():
         except:
             tx_df = pd.DataFrame(columns=['timestamp', 'asset', 'action', 'toll_paid', 'reason'])
         
-        # 🛡️ Resiliency Check
         if not tape_df.empty and 'is_active' not in tape_df.columns:
             tape_df['is_active'] = 1
 
@@ -49,8 +48,7 @@ def load_v3_data():
             if not df.empty and 'timestamp' in df.columns:
                 df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
         
-        # 🏛️ CHRONOLOGICAL FIX: Force the ledger into chronological order 
-        # This prevents the dashboard from picking the wrong 'last' row
+        # 🏛️ CHRONOLOGICAL FIX: Force sort so iloc[-1] is always the NEWEST entry
         if not payout_df.empty:
             payout_df = payout_df.sort_values('timestamp', ascending=True).reset_index(drop=True)
             
@@ -66,10 +64,8 @@ st.caption(f"Strategy: Market-Neutral Cash & Carry | Location: Hagley, UK | Spec
 tape_df, payout_df, tx_df = load_v3_data()
 
 if not payout_df.empty:
-    # 💎 CALCULATION ENGINE
     payout_df['new_balance'] = pd.to_numeric(payout_df['new_balance'], errors='coerce')
     
-    # After sorting in load_v3_data, iloc[-1] is now guaranteed to be the most recent entry
     current_balance = float(payout_df['new_balance'].iloc[-1])
     net_profit = current_balance - 10000.00
     roi = (net_profit / 10000.00) * 100
@@ -79,7 +75,6 @@ if not payout_df.empty:
     tax_reserve = taxable_amount * CGT_RATE
     true_net = current_balance - tax_reserve
 
-    # --- 💎 METRICS ---
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("Vault Balance", f"£{current_balance:,.2f}", f"£{net_profit:+.2f}")
     m2.metric("Geometric ROI", f"{roi:.4f}%", "Net-of-Friction")
@@ -87,7 +82,6 @@ if not payout_df.empty:
     m4.metric("True Liquidity", f"£{true_net:,.2f}", "Post-Tax Net")
     m5.metric("Total Tolls", f"£{total_fees:,.2f}", "Fees & Slippage", delta_color="inverse")
 
-    # --- 🛰️ YIELD HEATMAP ---
     st.divider()
     c1, c2 = st.columns([2, 1])
 
@@ -100,13 +94,12 @@ if not payout_df.empty:
             if not latest.empty:
                 latest = latest.sort_values('timestamp').groupby('asset').last().reset_index()
                 
-                # Dynamic Status Rendering
+                # Dynamic Status Rendering for "Stalled" markets
                 latest['Status'] = latest.apply(
                     lambda x: "🟢 ACTIVE" if x['is_active'] == 1 else 
                     ("🛡️ SHIELDED (Basis)" if x['basis_gap'] < 0 else "🛡️ SHIELDED (Yield)"), 
                     axis=1
                 )
-                
                 latest['Projected_APY'] = latest.apply(
                     lambda x: (x['funding_rate'] * 3 * 365 * 100) if x['is_active'] == 1 else 0.0, axis=1
                 )
@@ -129,28 +122,22 @@ if not payout_df.empty:
             if active_count < 6:
                 st.warning(f"Protective Shielding: {6-active_count} Assets")
 
-    # --- 📈 GROWTH ---
     st.divider()
     st.subheader("📈 Auditor: Net Liquidation Curve")
-    fig = px.line(payout_df, x='timestamp', y='new_balance', 
-                  template="plotly_dark", markers=True)
+    fig = px.line(payout_df, x='timestamp', y='new_balance', template="plotly_dark", markers=True)
     fig.update_traces(line_color='#00ffcc', line_width=3)
     st.plotly_chart(fig, width='stretch')
 
-    # --- 🧾 THE DUAL LEDGERS ---
     st.divider()
     col_l, col_r = st.columns(2)
-    
     with col_l:
         with st.expander("📊 View Audit History (BASIS_PAYOUT_LOG)"):
             st.dataframe(payout_df.sort_values('timestamp', ascending=False), width='stretch')
-            
     with col_r:
         with st.expander("🧾 View Transaction Log (Tolls Paid)"):
             if not tx_df.empty:
                 st.dataframe(tx_df.sort_values('timestamp', ascending=False), width='stretch')
             else:
                 st.info("No transaction tolls recorded yet.")
-
 else:
     st.error("Firm Locked: Check BASIS_PAYOUT_LOG.")
