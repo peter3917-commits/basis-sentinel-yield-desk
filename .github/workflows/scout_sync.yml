@@ -3,7 +3,7 @@ name: Basis-Sentinel Operations
 on:
   repository_dispatch:
     types: [ping_scout, ping_audit]
-  workflow_dispatch:
+  workflow_dispatch: # 🔓 Enable the manual 'Run workflow' button
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -11,7 +11,7 @@ env:
 jobs:
   run_desk:
     runs-on: ubuntu-latest
-    # 🔐 PERMISSIONS: Required to allow the bot to commit changes to vault_states.json
+    # 🔐 PERMISSIONS: Crucial for the bot to save vault_states.json
     permissions:
       contents: write
       
@@ -19,7 +19,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4.2.2
         with:
-          fetch-depth: 0 # Ensures we can push back to the repo
+          fetch-depth: 0 
 
       - name: Setup Python
         uses: actions/setup-python@v5.3.0
@@ -36,17 +36,20 @@ jobs:
         run: python scout_yield.py
 
       - name: Run Payout Auditor
-        if: github.event.action == 'ping_audit'
+        # 🛡️ V3.5 LOGIC: Run if server pings OR if you click the manual button
+        if: |
+          github.event.action == 'ping_audit' || 
+          github.event_name == 'workflow_dispatch'
         env:
           GSHEETS_SECRET: ${{ secrets.GSHEETS_SECRET }}
           GSHEET_ID: ${{ secrets.GSHEET_ID }}
         run: python auditor_payout.py
 
-      # 🧠 PERSISTENT MEMORY STEP: Saves the 'Active/Inactive' states
+      # 🧠 PERSISTENT MEMORY: Preserving your original state-saving function
       - name: Commit and Push Vault State
         run: |
           git config --global user.name "Sentinel-Bot"
           git config --global user.email "actions@github.com"
           git add vault_states.json
-          # Only commit if the file actually changed to avoid empty 'noise' commits
+          # Only commit if the file actually changed to avoid 'noise'
           git diff --quiet && git diff --staged --quiet || (git commit -m "🤖 V3: Update Vault States [Automated]" && git push)
