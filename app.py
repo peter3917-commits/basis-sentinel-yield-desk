@@ -49,6 +49,11 @@ def load_v3_data():
             if not df.empty and 'timestamp' in df.columns:
                 df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
         
+        # 🏛️ CHRONOLOGICAL FIX: Force the ledger into chronological order 
+        # This prevents the dashboard from picking the wrong 'last' row
+        if not payout_df.empty:
+            payout_df = payout_df.sort_values('timestamp', ascending=True).reset_index(drop=True)
+            
         return tape_df, payout_df, tx_df
     except Exception as e:
         st.error(f"⚠️ Vault Access Error: {e}")
@@ -63,6 +68,8 @@ tape_df, payout_df, tx_df = load_v3_data()
 if not payout_df.empty:
     # 💎 CALCULATION ENGINE
     payout_df['new_balance'] = pd.to_numeric(payout_df['new_balance'], errors='coerce')
+    
+    # After sorting in load_v3_data, iloc[-1] is now guaranteed to be the most recent entry
     current_balance = float(payout_df['new_balance'].iloc[-1])
     net_profit = current_balance - 10000.00
     roi = (net_profit / 10000.00) * 100
@@ -92,7 +99,14 @@ if not payout_df.empty:
             
             if not latest.empty:
                 latest = latest.sort_values('timestamp').groupby('asset').last().reset_index()
-                latest['Status'] = latest['is_active'].apply(lambda x: "🟢 ACTIVE" if x == 1 else "🛡️ SHIELDED")
+                
+                # Dynamic Status Rendering
+                latest['Status'] = latest.apply(
+                    lambda x: "🟢 ACTIVE" if x['is_active'] == 1 else 
+                    ("🛡️ SHIELDED (Basis)" if x['basis_gap'] < 0 else "🛡️ SHIELDED (Yield)"), 
+                    axis=1
+                )
+                
                 latest['Projected_APY'] = latest.apply(
                     lambda x: (x['funding_rate'] * 3 * 365 * 100) if x['is_active'] == 1 else 0.0, axis=1
                 )
@@ -113,7 +127,7 @@ if not payout_df.empty:
             active_count = latest['is_active'].sum()
             st.write(f"Deployment: {active_count} / 6 Assets")
             if active_count < 6:
-                st.warning(f"Note: {6-active_count} Assets Ejected")
+                st.warning(f"Protective Shielding: {6-active_count} Assets")
 
     # --- 📈 GROWTH ---
     st.divider()
